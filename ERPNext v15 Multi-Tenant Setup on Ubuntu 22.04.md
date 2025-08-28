@@ -136,6 +136,143 @@ Place all site configs in a single `/etc/nginx/conf.d/frappe-bench.conf`:
 ```bash
 sudo nano /etc/nginx/conf.d/frappe-bench.conf
 ```
+
+```bash
+# Upstreams for Frappe and SocketIO
+upstream frappe-bench-frappe {
+    server 127.0.0.1:8000 fail_timeout=0;
+}
+upstream frappe-bench-socketio {
+    server 127.0.0.1:9000 fail_timeout=0;
+}
+
+# Redirect all HTTP to HTTPS for both sites
+server {
+    listen 80;
+    listen [::]:80;
+    server_name erp1.insightse.com erp2.insightse.com;
+    return 301 https://$host$request_uri;
+}
+
+# Site 1 HTTPS configuration
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name erp1.insightse.com;
+
+    root /home/ubuntu/frappe-bench/sites;
+
+    ssl_certificate      /etc/nginx/conf.d/ssl/erp1.insightse.com.crt;
+    ssl_certificate_key  /etc/nginx/conf.d/ssl/erp1.insightse.com.key;
+    ssl_session_timeout  5m;
+    ssl_session_cache    shared:SSL:10m;
+    ssl_session_tickets  off;
+    ssl_protocols        TLSv1.2 TLSv1.3;
+    ssl_ciphers          EECDH+AESGCM:EDH+AESGCM;
+    ssl_prefer_server_ciphers on;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options nosniff;
+
+    location /assets {
+        try_files $uri =404;
+        add_header Cache-Control "max-age=31536000";
+    }
+    location ~ ^/protected/.* {
+        internal;
+        try_files /$host/$uri =404;
+    }
+    location /socket.io {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Frappe-Site-Name $host;
+        proxy_set_header Origin $scheme://$http_host;
+        proxy_set_header Host $host;
+        proxy_pass http://frappe-bench-socketio;
+    }
+    location / {
+        try_files /$host/public/$uri @webserver;
+    }
+    location @webserver {
+        proxy_http_version 1.1;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Frappe-Site-Name $host;
+        proxy_set_header Host $host;
+        proxy_set_header X-Use-X-Accel-Redirect True;
+        proxy_read_timeout 120;
+        proxy_redirect off;
+        proxy_pass http://frappe-bench-frappe;
+    }
+    error_page 502 /502.html;
+    location = /502.html {
+        root /usr/local/lib/python3.10/dist-packages/bench/config/templates;
+        internal;
+    }
+}
+
+# Site 2 HTTPS configuration
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name erp2.insightse.com;
+
+    root /home/ubuntu/frappe-bench/sites;
+
+    ssl_certificate      /etc/nginx/conf.d/ssl/erp2.insightse.com.crt;
+    ssl_certificate_key  /etc/nginx/conf.d/ssl/erp2.insightse.com.key;
+    ssl_session_timeout  5m;
+    ssl_session_cache    shared:SSL:10m;
+    ssl_session_tickets  off;
+    ssl_protocols        TLSv1.2 TLSv1.3;
+    ssl_ciphers          EECDH+AESGCM:EDH+AESGCM;
+    ssl_prefer_server_ciphers on;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options nosniff;
+
+    location /assets {
+        try_files $uri =404;
+        add_header Cache-Control "max-age=31536000";
+    }
+    location ~ ^/protected/.* {
+        internal;
+        try_files /$host/$uri =404;
+    }
+    location /socket.io {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Frappe-Site-Name $host;
+        proxy_set_header Origin $scheme://$http_host;
+        proxy_set_header Host $host;
+        proxy_pass http://frappe-bench-socketio;
+    }
+    location / {
+        try_files /$host/public/$uri @webserver;
+    }
+    location @webserver {
+        proxy_http_version 1.1;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Frappe-Site-Name $host;
+        proxy_set_header Host $host;
+        proxy_set_header X-Use-X-Accel-Redirect True;
+        proxy_read_timeout 120;
+        proxy_redirect off;
+        proxy_pass http://frappe-bench-frappe;
+    }
+    error_page 502 /502.html;
+    location = /502.html {
+        root /usr/local/lib/python3.10/dist-packages/bench/config/templates;
+        internal;
+    }
+}
+
+```
 Paste the unified config (includes upstreams, HTTP→HTTPS, SSL vhosts for both sites).
 
 Verify cert/key match:
